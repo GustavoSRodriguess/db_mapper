@@ -1,0 +1,7 @@
+streamlit>=1.28.0
+plotly>=5.15.0
+pandas>=2.0.0
+flask>=2.3.0
+psycopg2-binary>=2.9.0
+PyMySQL>=1.0.0
+ujson>=5.8.0

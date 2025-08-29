@@ -1,0 +1,21 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# IDE
+.vscode/
+.idea/
+
+# Cache files
+*.cache
+mapping_cache.json
+path_cache.json
+
+# OS
+.DS_Store
+Thumbs.db
