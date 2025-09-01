@@ -15,7 +15,7 @@ import plotly.express as px
 from datetime import datetime
 import psycopg2
 import pymysql
-import sqlite3
+import cx_Oracle
 
 # Configuração da página
 st.set_page_config(
@@ -196,8 +196,11 @@ class FocusedDatabaseMapper:
                 params = self.connection_params.copy()
                 params.setdefault('connect_timeout', 10)
                 return pymysql.connect(**params)
-            elif self.db_type == 'sqlite':
-                return sqlite3.connect(self.connection_params['database'], timeout=10)
+            elif self.db_type == 'oracle':
+                params = self.connection_params.copy()
+                params.setdefault('timeout', 10)
+                dsn = f"{params['host']}:{params['port']}/{params['database']}"
+                return cx_Oracle.connect(params['user'], params['password'], dsn)
         except Exception as e:
             raise Exception(f"Erro ao conectar: {e}")
     
@@ -225,8 +228,8 @@ class FocusedDatabaseMapper:
                     WHERE table_schema = DATABASE()
                     ORDER BY table_name
                 """)
-            else:  # SQLite
-                cursor.execute("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
+            else:  # Oracle
+                cursor.execute("SELECT table_name FROM user_tables ORDER BY table_name")
             
             all_tables = [row[0] for row in cursor.fetchall()]
             
@@ -264,6 +267,20 @@ class FocusedDatabaseMapper:
                         AND kcu.table_schema = DATABASE()
                         AND (kcu.table_name IN ({placeholders}) OR kcu.referenced_table_name IN ({placeholders}))
                 """, list(relevant_tables) * 2)
+            else:  # Oracle
+                placeholders = ','.join([':' + str(i) for i in range(1, len(relevant_tables) * 2 + 1)])
+                params = list(relevant_tables) * 2
+                cursor.execute(f"""
+                    SELECT DISTINCT 
+                        ac.table_name,
+                        r_ac.table_name
+                    FROM user_constraints ac
+                    JOIN user_cons_columns acc ON ac.constraint_name = acc.constraint_name
+                    JOIN user_constraints r_ac ON ac.r_constraint_name = r_ac.constraint_name
+                    WHERE ac.constraint_type = 'R'
+                        AND (ac.table_name IN ({','.join([':' + str(i) for i in range(1, len(relevant_tables) + 1)])}) 
+                             OR r_ac.table_name IN ({','.join([':' + str(i) for i in range(len(relevant_tables) + 1, len(relevant_tables) * 2 + 1)])}))
+                """, params)
             
             # Expandir rede com tabelas conectadas
             for row in cursor.fetchall():
@@ -345,6 +362,27 @@ class FocusedDatabaseMapper:
                         AND kcu.table_schema = DATABASE()
                         AND kcu.table_name IN ({placeholders})
                 """, relevant_tables)
+            else:  # Oracle
+                # Para Oracle, usar bind variables nomeados
+                params = {f'tab{i}': tab for i, tab in enumerate(relevant_tables)}
+                param_names = list(params.keys())
+                placeholders = ','.join([':' + name for name in param_names])
+                
+                cursor.execute(f"""
+                    SELECT 
+                        ac.table_name as source_table,
+                        acc.column_name as source_column,
+                        r_ac.table_name as target_table,
+                        r_acc.column_name as target_column
+                    FROM user_constraints ac
+                    JOIN user_cons_columns acc ON ac.constraint_name = acc.constraint_name
+                    JOIN user_constraints r_ac ON ac.r_constraint_name = r_ac.constraint_name
+                    JOIN user_cons_columns r_acc ON r_ac.constraint_name = r_acc.constraint_name
+                        AND acc.position = r_acc.position
+                    WHERE ac.constraint_type = 'R'
+                        AND ac.table_name IN ({placeholders})
+                    ORDER BY ac.table_name, acc.position
+                """, params)
             
             fk_count = 0
             for row in cursor.fetchall():
@@ -374,6 +412,18 @@ class FocusedDatabaseMapper:
                         AND table_name IN ({placeholders})
                     ORDER BY table_name, ordinal_position
                 """, relevant_tables)
+            else:  # Oracle
+                # Para Oracle, usar bind variables nomeados
+                params = {f'tab{i}': tab for i, tab in enumerate(relevant_tables)}
+                param_names = list(params.keys())
+                placeholders = ','.join([':' + name for name in param_names])
+                
+                cursor.execute(f"""
+                    SELECT table_name, column_name, data_type
+                    FROM user_tab_columns 
+                    WHERE table_name IN ({placeholders})
+                    ORDER BY table_name, column_id
+                """, params)
             
             for row in cursor.fetchall():
                 table_name, column_name, data_type = row
@@ -529,17 +579,21 @@ def main():
     with st.sidebar:
         st.header("⚙️ Configuração")
         
-        db_type = st.selectbox("Tipo", ["postgresql", "mysql", "sqlite"], index=0)
+        db_type = st.selectbox("Tipo", ["postgresql", "mysql", "oracle"], index=0)
         
-        if db_type != 'sqlite':
+        if db_type != 'oracle':
             host = st.text_input("Host", value="localhost")
             port = st.number_input("Porta", value=5432 if db_type == 'postgresql' else 3306)
             database = st.text_input("Database", value="dev")
             user = st.text_input("Usuário", value="postgres")
             password = st.text_input("Senha", type="password", value="")
         else:
-            database = st.text_input("Arquivo", value="database.db")
-            host = port = user = password = None
+            host = st.text_input("Host", value="localhost")
+            port = st.number_input("Porta", value=1521)
+            service_name = st.text_input("Service Name", value="XEPDB1")
+            user = st.text_input("Usuário", value="hr")
+            password = st.text_input("Senha", type="password", value="")
+            database = service_name  # Para Oracle, database é o service name
         
         st.markdown("---")
         st.subheader("🎯 Padrões de Tabelas")
@@ -602,11 +656,16 @@ def main():
     
     # Preparar conexão
     connection_params = {'database': database}
-    if db_type != 'sqlite':
+    if db_type != 'oracle':
         if host: connection_params['host'] = host
         if port: connection_params['port'] = port
         if user: connection_params['user'] = user
         if password: connection_params['password'] = password
+    else:
+        connection_params['host'] = host
+        connection_params['port'] = port
+        connection_params['user'] = user
+        connection_params['password'] = password
     
     # Executar mapeamento focado
     if map_button and database:
