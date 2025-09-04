@@ -8,7 +8,7 @@ Um mapeador inteligente de relacionamentos entre tabelas de banco de dados, otim
 - **⚡ Cache Inteligente**: Sistema de cache duplo para máxima performance
 - **🔍 Busca de Caminhos**: Encontra relacionamentos entre tabelas automaticamente
 - **📊 Interface Visual**: Dashboard Streamlit com gráficos interativos
-- **🗄️ Multi-Banco**: Suporte para PostgreSQL, MySQL e SQLite
+- **🗄️ Multi-Banco**: Suporte para PostgreSQL, MySQL e Oracle
 
 ## 🚀 Instalação
 
@@ -27,7 +27,7 @@ streamlit run focused_mapper.py
 
 ### 1. Configure a Conexão
 Na barra lateral, configure:
-- Tipo de banco (PostgreSQL, MySQL, SQLite)
+- Tipo de banco (PostgreSQL, MySQL, Oracle)
 - Parâmetros de conexão (host, porta, usuário, senha)
 
 ### 2. Defina os Padrões
@@ -80,7 +80,6 @@ O sistema usa uma abordagem inteligente em duas etapas:
 - **Pandas**: Manipulação de dados
 - **psycopg2**: Conexão PostgreSQL
 - **pymysql**: Conexão MySQL
-- **sqlite3**: Conexão SQLite
 
 ## ⚡ Performance
 
